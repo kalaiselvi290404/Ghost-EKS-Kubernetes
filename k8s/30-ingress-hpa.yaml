@@ -1,0 +1,47 @@
+# The AWS Load Balancer Controller watches for this Ingress and provisions a
+# real internet-facing ALB in the public subnets. target-type "ip" routes the
+# ALB directly to pod IPs.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ghost
+  namespace: ghost
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/healthcheck-path: /
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ghost
+                port:
+                  number: 80
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ghost
+  namespace: ghost
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ghost
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          # Scale out when average CPU across Ghost pods exceeds 50% of the
+          # 100m request. This is the pod-level analogue of Project 3's
+          # CloudWatch alarm driving the EC2 Auto Scaling Group.
+          averageUtilization: 50

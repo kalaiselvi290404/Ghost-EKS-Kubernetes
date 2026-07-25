@@ -1,0 +1,13 @@
+# Rename this file to terraform.tfvars (drop .template) before running terraform.
+# Every value here has a working default in variables.tf — you only need to
+# override something if you want to change it. The defaults are tuned for a
+# cheap, single-day build-and-destroy in ap-south-1.
+
+# region             = "ap-south-1"   # Mumbai — matches Projects 1-3
+# project_name       = "ghost-eks"    # prefix for all resource names/tags
+# cluster_version    = "1.34"         # EKS control-plane version (must be on
+#                                     # standard support, or billing jumps ~6x)
+# node_instance_type = "t3.small"     # 2 vCPU / 2 GiB — enough for Ghost + MySQL
+# node_desired_size  = 2              # start with 2 nodes across 2 AZs
+# node_min_size      = 2
+# node_max_size      = 4              # headroom for HPA scale-out

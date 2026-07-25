@@ -1,0 +1,10 @@
+# Terraform
+.terraform/
+# .terraform.lock.hcl is deliberately NOT ignored — it pins exact provider
+# versions so every run resolves the same way.
+*.tfstate
+*.tfstate.*
+*.tfvars
+crash.log
+# Local
+*.log
