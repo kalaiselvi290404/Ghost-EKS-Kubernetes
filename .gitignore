@@ -5,6 +5,9 @@
 *.tfstate
 *.tfstate.*
 *.tfvars
+# Saved plan files can embed resource attributes and secrets.
+tfplan
+*.tfplan
 crash.log
 # Local
 *.log

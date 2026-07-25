@@ -31,6 +31,19 @@ terraform apply
 ```
 Takes ~15 min (the EKS control plane is the slow part). Note the outputs.
 
+**The `aws-ebs-csi-driver` addon needs its own IRSA role** (`ebs_csi_irsa.tf`).
+Without it the controller has no AWS identity, fails its EC2 dry-run health
+check, and sits in CrashLoopBackOff — the addon never leaves CREATING and
+`terraform apply` fails on a 20-minute timeout.
+
+If the controller pods were already running when the role got attached, restart
+them. IRSA credentials are injected at pod creation by a mutating webhook, so
+annotating the ServiceAccount does not reach pods that already exist:
+```
+kubectl -n kube-system rollout restart deployment ebs-csi-controller
+kubectl -n kube-system rollout status deploy/ebs-csi-controller
+```
+
 ## Step 4 — Point kubectl at the cluster
 Copy the `configure_kubectl` output and run it, e.g.:
 ```
@@ -123,12 +136,45 @@ Screenshot: HPA TARGETS climbing past 50%, REPLICAS rising 2 -> 4+.
 Clean up the load pod: `kubectl -n ghost delete pod load`.
 
 ## Step 12 — [APPROVAL GATE] Destroy
-Delete the Ingress FIRST so the ALB is removed before the cluster:
+Order matters. The ALB and the MySQL EBS volume are both created *through
+Kubernetes*, not by Terraform, so neither is in Terraform state and neither is
+removed by `terraform destroy`. Both must be deleted while the controllers that
+own them are still running, or they orphan and keep billing after the cluster
+is gone.
+
+### 12a — Delete the Ingress, then confirm the ALB is released
 ```
 kubectl -n ghost delete ingress ghost
-# wait ~1 min for the ALB to disappear
+```
+Wait ~60-90s, then confirm — this must return an empty list before continuing:
+```
+aws elbv2 describe-load-balancers --region ap-south-1 --query "LoadBalancers[].LoadBalancerName"
+```
+
+### 12b — Delete the namespace, then confirm the EBS volume is gone
+Deleting the namespace deletes the PVC, and the PV's `Delete` reclaim policy
+makes the CSI driver delete the underlying EBS volume. Destroying the cluster
+first removes the CSI driver, leaving the volume stranded.
+```
+kubectl delete namespace ghost
+```
+Poll the volume ID from `kubectl get pv` until AWS reports it no longer exists
+(`InvalidVolume.NotFound`), or check that nothing is left unattached:
+```
+aws ec2 describe-volumes --region ap-south-1 --filters Name=status,Values=available
+```
+
+### 12c — Only once both are confirmed gone, destroy
+```
 cd ../terraform
 terraform destroy
 ```
-Confirm destroy completes with 0 resources remaining. Then check the console:
-no leftover ALB, no leftover EBS volumes, no NAT gateway still running.
+Confirm it completes with 0 resources remaining, then verify nothing is still
+billing. All of these should come back empty:
+```
+aws eks list-clusters --region ap-south-1
+aws elbv2 describe-load-balancers --region ap-south-1 --query "LoadBalancers[].LoadBalancerName"
+aws ec2 describe-volumes --region ap-south-1 --query "Volumes[].VolumeId"
+aws ec2 describe-nat-gateways --region ap-south-1 --filter Name=state,Values=available,pending
+aws ec2 describe-addresses --region ap-south-1 --query "Addresses[].PublicIp"
+```

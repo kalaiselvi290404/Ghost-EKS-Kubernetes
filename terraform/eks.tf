@@ -19,9 +19,11 @@ module "eks" {
   # Core addons. The EBS CSI driver is what lets the MySQL StatefulSet's
   # PersistentVolumeClaim actually provision an EBS volume.
   addons = {
-    coredns            = {}
-    kube-proxy         = {}
-    aws-ebs-csi-driver = {}
+    coredns    = {}
+    kube-proxy = {}
+    # The CSI driver needs an AWS identity to call EC2 (CreateVolume,
+    # AttachVolume). Without this the controller crash-loops.
+    aws-ebs-csi-driver = { service_account_role_arn = module.ebs_csi_irsa.iam_role_arn }
     # before_compute installs these before the node group joins, so pod
     # networking and identity are ready when nodes come up (avoids a race).
     eks-pod-identity-agent = { before_compute = true }
